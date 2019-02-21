@@ -1,0 +1,45 @@
+sudo: true
+
+language: bash
+
+services:
+  - docker
+
+env:
+  global:
+    - DOCKERHUB_LIVE="taisun/updater"
+
+jobs:
+  include:
+    - stage: BuildMaster
+      if: (branch = master) AND (NOT (type IN (pull_request)))
+      before_install:
+        - /bin/bash pre_install
+      script:
+        # Build the applicaiton against the 3 architectures
+        - docker build --no-cache -f Dockerfile.amd64 -t ${DOCKERHUB_LIVE}:amd64-${TRAVIS_COMMIT} .
+        - docker build --no-cache -f Dockerfile.armhf -t ${DOCKERHUB_LIVE}:arm32v6-${TRAVIS_COMMIT} .
+        - docker build --no-cache -f Dockerfile.aarch64 -t ${DOCKERHUB_LIVE}:arm64v8-${TRAVIS_COMMIT} .
+        # Tag these builds to latest
+        - docker tag ${DOCKERHUB_LIVE}:amd64-${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:amd64-latest
+        - docker tag ${DOCKERHUB_LIVE}:arm32v6-${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm32v6-latest
+        - docker tag ${DOCKERHUB_LIVE}:arm64v8-${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm64v8-latest
+        # Login to DockerHub
+        - echo $DOCKERPASS | docker login -u $DOCKERUSER --password-stdin
+        # Push all of the tags
+        - docker push ${DOCKERHUB_LIVE}:amd64-${TRAVIS_COMMIT}
+        - docker push ${DOCKERHUB_LIVE}:arm32v6-${TRAVIS_COMMIT}
+        - docker push ${DOCKERHUB_LIVE}:arm64v8-${TRAVIS_COMMIT}
+        - docker push ${DOCKERHUB_LIVE}:amd64-latest
+        - docker push ${DOCKERHUB_LIVE}:arm32v6-latest
+        - docker push ${DOCKERHUB_LIVE}:arm64v8-latest
+        # Generate local manifests for latest and at commit
+        - docker manifest create ${DOCKERHUB_LIVE}:latest ${DOCKERHUB_LIVE}:amd64-latest ${DOCKERHUB_LIVE}:arm32v6-latest ${DOCKERHUB_LIVE}:arm64v8-latest
+        - docker manifest annotate ${DOCKERHUB_LIVE}:latest ${DOCKERHUB_LIVE}:arm32v6-latest --os linux --arch arm
+        - docker manifest annotate ${DOCKERHUB_LIVE}:latest ${DOCKERHUB_LIVE}:arm64v8-latest --os linux --arch arm64 --variant v8
+        - docker manifest create ${DOCKERHUB_LIVE}:${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:amd64-${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm32v6-${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm64v8-${TRAVIS_COMMIT}
+        - docker manifest annotate ${DOCKERHUB_LIVE}:${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm32v6-${TRAVIS_COMMIT} --os linux --arch arm
+        - docker manifest annotate ${DOCKERHUB_LIVE}:${TRAVIS_COMMIT} ${DOCKERHUB_LIVE}:arm64v8-${TRAVIS_COMMIT} --os linux --arch arm64 --variant v8
+        # Push the manifests to these meta tags
+        - docker manifest push ${DOCKERHUB_LIVE}:latest
+        - docker manifest push ${DOCKERHUB_LIVE}:${TRAVIS_COMMIT}
